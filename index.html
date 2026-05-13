@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>자세 균형 분석 및 관리 가이드</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/posenet"></script>
+  <style>
+    body { font-family: 'Pretendard', sans-serif; text-align: center; background: #f0f2f5; color: #333; }
+    .container { max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+    canvas { max-width: 100%; height: auto; border-radius: 10px; margin-top: 15px; }
+    .result-card { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 20px; text-align: left; }
+    .status-item { padding: 15px; border-radius: 10px; border: 1px solid #ddd; }
+    .warning { background-color: #fff4f4; border-color: #ffcccc; }
+    .good { background-color: #f4fff4; border-color: #ccffcc; }
+    .tip-box { margin-top: 20px; padding: 15px; background: #eef6ff; border-radius: 10px; font-size: 0.9em; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h2>자세 균형 분석 도구</h2>
+  <p>정면 사진을 업로드하여 어깨와 골반의 수평도를 확인하세요.</p>
+  
+  <input type="file" id="upload-photo" accept="image/*">
+  <br>
+  <canvas id="output"></canvas>
+
+  <div class="result-card" id="analysis-results">
+    </div>
+
+  <div class="tip-box">
+    <strong>💡 관리 가이드:</strong><br>
+    분석 결과 기울기가 5도 이상인 부위가 있다면, 평소 짝다리를 짚거나 한쪽으로 가방을 메는 습관을 점검해 보세요. 
+    주기적인 스트레칭이 큰 도움이 됩니다.
+  </div>
+</div>
+
+<script>
+  const imageInput = document.getElementById('upload-photo');
+  const canvas = document.getElementById('output');
+  const ctx = canvas.getContext('2d');
+  const resultsDiv = document.getElementById('analysis-results');
+
+  async function loadApp() {
+    const net = await posenet.load();
+    
+    imageInput.onchange = (e) => {
+      const file = e.target.files[0];
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target.result;
+        img.onload = async () => {
+          canvas.width = img.width;
+          canvas.height = img.height;
+          ctx.drawImage(img, 0, 0);
+          const pose = await net.estimateSinglePose(img);
+          analyze(pose.keypoints);
+        };
+      };
+      reader.readAsDataURL(file);
+    };
+  }
+
+  function getAngle(p1, p2) {
+    return Math.atan2(p2.y - p1.y, p2.x - p1.x) * (180 / Math.PI);
+  }
+
+  function analyze(keypoints) {
+    const parts = {};
+    keypoints.forEach(k => { if(k.score > 0.5) parts[k.part] = k.position; });
+
+    let html = '';
+    
+    // 어깨 분석
+    if (parts.leftShoulder && parts.rightShoulder) {
+      const sAngle = Math.abs(getAngle(parts.leftShoulder, parts.rightShoulder)).toFixed(1);
+      const sClass = sAngle > 5 ? 'warning' : 'good';
+      html += `<div class="status-item ${sClass}">
+                <strong>어깨 수평도: ${sAngle}°</strong><br>
+                ${sAngle > 5 ? '⚠️ 비대칭 관리 필요' : '✅ 양호한 수평 상태'}
+               </div>`;
+      drawLink(parts.leftShoulder, parts.rightShoulder, 'blue');
+    }
+
+    // 골반 분석
+    if (parts.leftHip && parts.rightHip) {
+      const hAngle = Math.abs(getAngle(parts.leftHip, parts.rightHip)).toFixed(1);
+      const hClass = hAngle > 5 ? 'warning' : 'good';
+      html += `<div class="status-item ${hClass}">
+                <strong>골반 수평도: ${hAngle}°</strong><br>
+                ${hAngle > 5 ? '⚠️ 균형 개선 권장' : '✅ 안정적인 상태'}
+               </div>`;
+      drawLink(parts.leftHip, parts.rightHip, 'green');
+    }
+
+    resultsDiv.innerHTML = html || '<p>신체 주요 지점을 찾을 수 없습니다. 전신이 나온 사진을 사용해 주세요.</p>';
+  }
+
+  function drawLink(p1, p2, color) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    ctx.stroke();
+  }
+
+  loadApp();
+</script>
+</body>
+</html>
